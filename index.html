@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Real-time Text Streaming</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        
+        .container {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 20px;
+            padding: 40px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+            max-width: 800px;
+            width: 100%;
+            backdrop-filter: blur(10px);
+        }
+        
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 30px;
+            font-size: 2.5em;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.1);
+        }
+        
+        .textbox-container {
+            display: flex;
+            gap: 30px;
+            margin-bottom: 20px;
+        }
+        
+        .textbox-wrapper {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .textbox-label {
+            font-weight: bold;
+            color: #555;
+            margin-bottom: 10px;
+            font-size: 1.1em;
+            text-align: center;
+        }
+        
+        .textbox {
+            width: 100%;
+            height: 300px;
+            padding: 20px;
+            border: 2px solid #ddd;
+            border-radius: 15px;
+            font-size: 16px;
+            font-family: 'Courier New', monospace;
+            resize: none;
+            transition: all 0.3s ease;
+            background: rgba(255, 255, 255, 0.9);
+            line-height: 1.5;
+        }
+        
+        .textbox:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 15px rgba(102, 126, 234, 0.3);
+            transform: translateY(-2px);
+        }
+        
+        .status {
+            text-align: center;
+            margin-top: 20px;
+            padding: 10px;
+            border-radius: 10px;
+            font-weight: bold;
+            transition: all 0.3s ease;
+        }
+        
+        .status.connected {
+            background: rgba(76, 175, 80, 0.2);
+            color: #4CAF50;
+            border: 1px solid #4CAF50;
+        }
+        
+        .status.disconnected {
+            background: rgba(244, 67, 54, 0.2);
+            color: #F44336;
+            border: 1px solid #F44336;
+        }
+        
+        .sync-indicator {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #4CAF50;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+        
+        .textbox-wrapper {
+            position: relative;
+        }
+        
+        .sync-indicator.active {
+            opacity: 1;
+            animation: pulse 0.5s ease-in-out;
+        }
+        
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.3); }
+            100% { transform: scale(1); }
+        }
+        
+        @media (max-width: 768px) {
+            .textbox-container {
+                flex-direction: column;
+                gap: 20px;
+            }
+            
+            .container {
+                padding: 20px;
+            }
+            
+            h1 {
+                font-size: 2em;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Real-time Text Streaming</h1>
+        
+        <div class="textbox-container">
+            <div class="textbox-wrapper">
+                <div class="textbox-label">Text Box 1</div>
+                <textarea id="textbox1" class="textbox" placeholder="Start typing here... Changes will appear in Text Box 2 in real-time!"></textarea>
+                <div class="sync-indicator" id="sync1"></div>
+            </div>
+            
+            <div class="textbox-wrapper">
+                <div class="textbox-label">Text Box 2</div>
+                <textarea id="textbox2" class="textbox" placeholder="Start typing here... Changes will appear in Text Box 1 in real-time!"></textarea>
+                <div class="sync-indicator" id="sync2"></div>
+            </div>
+        </div>
+        
+        <div id="status" class="status disconnected">Connecting...</div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        const socket = io();
+        const textbox1 = document.getElementById('textbox1');
+        const textbox2 = document.getElementById('textbox2');
+        const status = document.getElementById('status');
+        const sync1 = document.getElementById('sync1');
+        const sync2 = document.getElementById('sync2');
+        
+        let isUpdating = false;
+        
+        // Connection status handlers
+        socket.on('connect', () => {
+            status.textContent = 'Connected - Ready for real-time streaming!';
+            status.className = 'status connected';
+        });
+        
+        socket.on('disconnect', () => {
+            status.textContent = 'Disconnected - Reconnecting...';
+            status.className = 'status disconnected';
+        });
+        
+        // Initialize with current content
+        socket.on('initialize', (data) => {
+            if (!isUpdating) {
+                textbox1.value = data.textbox1;
+                textbox2.value = data.textbox2;
+            }
+        });
+        
+        // Handle incoming changes from textbox1
+        socket.on('textbox1-changed', (data) => {
+            if (!isUpdating) {
+                isUpdating = true;
+                textbox1.value = data.text;
+                showSyncIndicator(sync1);
+                setTimeout(() => { isUpdating = false; }, 100);
+            }
+        });
+        
+        // Handle incoming changes from textbox2
+        socket.on('textbox2-changed', (data) => {
+            if (!isUpdating) {
+                isUpdating = true;
+                textbox2.value = data.text;
+                showSyncIndicator(sync2);
+                setTimeout(() => { isUpdating = false; }, 100);
+            }
+        });
+        
+        // Show sync indicator
+        function showSyncIndicator(indicator) {
+            indicator.classList.add('active');
+            setTimeout(() => {
+                indicator.classList.remove('active');
+            }, 500);
+        }
+        
+        // Prevent circular updates and add smooth typing experience
+        let timeout1, timeout2;
+        
+        textbox1.addEventListener('input', (e) => {
+            clearTimeout(timeout1);
+            timeout1 = setTimeout(() => {
+                if (!isUpdating) {
+                    console.log('Sending textbox1 update:', e.target.value);
+                    socket.emit('textbox1-update', { text: e.target.value });
+                    showSyncIndicator(sync1);
+                }
+            }, 50); // Small delay to prevent too many events
+        });
+        
+        textbox2.addEventListener('input', (e) => {
+            clearTimeout(timeout2);
+            timeout2 = setTimeout(() => {
+                if (!isUpdating) {
+                    console.log('Sending textbox2 update:', e.target.value);
+                    socket.emit('textbox2-update', { text: e.target.value });
+                    showSyncIndicator(sync2);
+                }
+            }, 50); // Small delay to prevent too many events
+        });
+    </script>
+</body>
+</html> 
